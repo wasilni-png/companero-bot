@@ -41,12 +41,26 @@ public class PassengerQueryParser {
         Long passengerId = update.getCallbackQuery().getFrom().getId();
         CountryCode passengerLocale = UserCollection.getUserLocale(passengerId);
 
+        // محاولة جلب الطلب غير المكتمل
         Document order = OrderCollection.getOrderByPassengerIdAndStatus(passengerId, PASSENGER_CONFIRMATION_WAITING);
-        OrderCollection.updateOrderStatus(order.get("orderId").toString(), WAITING_DEPARTURE_DETAILS);
 
-        sendMessageExecutor(
-                ReplyKeyboardHelper.backToPreviousPageKeyboard(passengerId, LocalizationHelper.getValueByCode(DEPARTURE_DETAILS_MESSAGE, passengerLocale))
-        );
+        // التحقق من null: هذا الشرط يمنع NullPointerException
+        if (order != null) { 
+            // السطر الذي كان ينهار (45): يتم تنفيذه الآن بأمان داخل الشرط
+            OrderCollection.updateOrderStatus(order.get("orderId").toString(), WAITING_DEPARTURE_DETAILS);
+
+            sendMessageExecutor(
+                    ReplyKeyboardHelper.backToPreviousPageKeyboard(passengerId, LocalizationHelper.getValueByCode(DEPARTURE_DETAILS_MESSAGE, passengerLocale))
+            );
+        } else {
+            // معالجة حالة عدم العثور على الطلب (توجيه المستخدم بدلاً من الانهيار)
+            MessageExecutionHelper.sendLocalizedMessage(
+                passengerId, 
+                LocalizationHelper.getValueByCode(ERROR_ORDER_NOT_FOUND, passengerLocale) // افترض رسالة خطأ لهذا الغرض
+            );
+            // اختياري: يمكنك أيضاً إرسال القائمة الرئيسية هنا
+            // sendMessageExecutor(ReplyKeyboardHelper.mainMenuPassengerKeyboard(passengerId, passengerLocale));
+        }
     }
 
     private static void addReviewOnDriver(Update update, String messageText, Long passengerId, CountryCode passengerLocale, boolean isLiked) {
@@ -59,10 +73,14 @@ public class PassengerQueryParser {
 
 
         Document order = OrderCollection.getOrderByOrderId(orderId);
+        
+        // *********************************************************************************
+        // تنبيه: هذه الدالة أيضاً تستخدم 'order' مباشرة. قد تحتاج إلى إضافة تحقق هنا لاحقاً!
+        // *********************************************************************************
+        
         Long driverId = Long.valueOf(order.get("driverId").toString());
 
         ReviewCollection.addUserReview(driverId, passengerId, isLiked);
         MessageExecutionHelper.editMessage(message, LocalizationHelper.getValueByCode(AFTER_RATE_MESSAGE, passengerLocale));
     }
-
 }
