@@ -1,3 +1,55 @@
+    // تأكد من إضافة هذا الاستيراد في أعلى ملف OrderCollection.java إذا لم يكن موجوداً:
+    import static com.mongodb.client.model.Filters.or;
+
+    /**
+     * تبحث عن الطرف الآخر في الطلب النشط الذي يسمح بالدردشة.
+     * @param userId مُعرّف المرسل (الراكب أو السائق).
+     * @return مُعرّف الطرف الآخر (السائق أو الراكب) أو null.
+     */
+    public static Long findActiveChatPartner(Long userId) {
+        // نحدد حالات الطلب التي تسمح بالدردشة الخاصة:
+        // عادةً تكون بعد قبول الطلب وقبل إنهائه.
+        
+        // أمثلة لحالات الدردشة المسموحة (يجب أن تتطابق مع ENUMS لديك):
+        // 1. السائق في الطريق
+        // 2. السائق وصل
+        // 3. الطلب جارٍ (بدأت الرحلة)
+        
+        // استخدم القائمة الحالية لحالاتك التي ليست مُلغاة أو مُنتهية
+        Document orderDoc = orderCollection.find(
+            Filters.and(
+                // البحث عن الطلب الذي يكون فيه المستخدم إما راكب أو سائق
+                Filters.or(Filters.eq("userId", userId), Filters.eq("driverId", userId)),
+                
+                // الطلب يجب أن يكون في حالة تسمح بالدردشة
+                // نستخدم (NE - Not Equal) للتأكد من أنه لم يتم إنهاء الطلب أو إلغاؤه بعد.
+                Filters.ne("orderStatus", ORDER_FINISHED.toString()),
+                Filters.ne("orderStatus", ORDER_CANCELED.toString()),
+                Filters.ne("orderStatus", WAITING_DRIVER_APPROVAL.toString()),
+                Filters.ne("orderStatus", WAITING_DRIVER.toString()),
+                Filters.ne("orderStatus", WAITING_PICKUP_ADDRESS.toString())
+            )
+        ).first();
+
+        if (orderDoc == null) {
+            return null; // لا يوجد طلب نشط يسمح بالدردشة
+        }
+
+        // تحديد الشريك وإرجاعه
+        Long passengerId = orderDoc.getLong("userId"); // لاحظ أن حقل الراكب هو "userId" في وثيقتك
+        Long driverId = orderDoc.getLong("driverId");
+
+        if (userId.equals(passengerId)) {
+            // المرسل هو الراكب، المستقبل هو السائق
+            return driverId;
+        } else if (userId.equals(driverId)) {
+            // المرسل هو السائق، المستقبل هو الراكب
+            return passengerId;
+        }
+        
+        return null;
+    }
+
 package com.companerobot.parsers;
 
 import org.telegram.telegrambots.meta.api.objects.message.Message;
