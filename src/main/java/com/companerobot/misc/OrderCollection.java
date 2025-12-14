@@ -1,61 +1,3 @@
-    // تأكد من إضافة هذا الاستيراد في أعلى ملف OrderCollection.java إذا لم يكن موجوداً:
-    import static com.mongodb.client.model.Filters.or;
-
-    /**
-     * تبحث عن الطرف الآخر في الطلب النشط الذي يسمح بالدردشة.
-     * @param userId مُعرّف المرسل (الراكب أو السائق).
-     * @return مُعرّف الطرف الآخر (السائق أو الراكب) أو null.
-     */
-    public static Long findActiveChatPartner(Long userId) {
-        // نحدد حالات الطلب التي تسمح بالدردشة الخاصة:
-        // عادةً تكون بعد قبول الطلب وقبل إنهائه.
-        
-        // أمثلة لحالات الدردشة المسموحة (يجب أن تتطابق مع ENUMS لديك):
-        // 1. السائق في الطريق
-        // 2. السائق وصل
-        // 3. الطلب جارٍ (بدأت الرحلة)
-        
-        // استخدم القائمة الحالية لحالاتك التي ليست مُلغاة أو مُنتهية
-        Document orderDoc = orderCollection.find(
-            Filters.and(
-                // البحث عن الطلب الذي يكون فيه المستخدم إما راكب أو سائق
-                Filters.or(Filters.eq("userId", userId), Filters.eq("driverId", userId)),
-                
-                // الطلب يجب أن يكون في حالة تسمح بالدردشة
-                // نستخدم (NE - Not Equal) للتأكد من أنه لم يتم إنهاء الطلب أو إلغاؤه بعد.
-                Filters.ne("orderStatus", ORDER_FINISHED.toString()),
-                Filters.ne("orderStatus", ORDER_CANCELED.toString()),
-                Filters.ne("orderStatus", WAITING_DRIVER_APPROVAL.toString()),
-                Filters.ne("orderStatus", WAITING_DRIVER.toString()),
-                Filters.ne("orderStatus", WAITING_PICKUP_ADDRESS.toString())
-            )
-        ).first();
-
-        if (orderDoc == null) {
-            return null; // لا يوجد طلب نشط يسمح بالدردشة
-        }
-
-        // تحديد الشريك وإرجاعه
-        Long passengerId = orderDoc.getLong("userId"); // لاحظ أن حقل الراكب هو "userId" في وثيقتك
-        Long driverId = orderDoc.getLong("driverId");
-
-        if (userId.equals(passengerId)) {
-            // المرسل هو الراكب، المستقبل هو السائق
-            return driverId;
-        } else if (userId.equals(driverId)) {
-            // المرسل هو السائق، المستقبل هو الراكب
-            return passengerId;
-        }
-        
-        return null;
-    }
-
-package com.companerobot.parsers;
-
-import org.telegram.telegrambots.meta.api.objects.message.Message;
-import com.companerobot.misc.OrderCollection;
-import com.companerobot.helpers.MessageExecutionHelper; // تأكد من استيراد هذه الدالة
-
 package com.companerobot.misc;
 
 import com.companerobot.enums.CountryCode;
@@ -72,6 +14,8 @@ import java.util.UUID;
 
 import static com.companerobot.enums.OrderStatus.*;
 import static com.companerobot.enums.OrderType.IMMEDIATE;
+// تم إضافة هذا الاستيراد لدالة findActiveChatPartner
+import static com.mongodb.client.model.Filters.or;
 
 public class OrderCollection extends MongoBaseClass {
 
@@ -100,29 +44,53 @@ public class OrderCollection extends MongoBaseClass {
         document.put("createdAt", new Date());
         orderCollection.insertOne(document);
     }
-public static void parseMessage(Message message) {
-        Long userId = message.getFrom().getId();
-if (message.hasText() && !message.getText().startsWith("/")) {
-         Long chatPartnerId = OrderCollection.findActiveChatPartner(userId);
-            
-            if (chatPartnerId != null) {
-                // إرسال الرسالة إلى الشريك الآخر
-                MessageExecutionHelper.forwardMessageWithRoleTag(
-                    message.getChatId(), // مُعرّف الدردشة الحالية
-                    message.getMessageId(), // مُعرّف الرسالة ليتم توجيهها
-                    chatPartnerId, // مُعرّف الشريك الآخر
-                    userId // لإضافة وسم "من الراكب/السائق"
-                );
-                return; // 🛑 التوقف هنا ومنع الكود من معالجة الرسالة كأمر عادي
-            }
-        }
-        // -----------------------------------------------------------------
+    
+    // 🌟 الدالة الجديدة للدردشة الخاصة 🌟
+    /**
+     * تبحث عن الطرف الآخر في الطلب النشط الذي يسمح بالدردشة.
+     * @param userId مُعرّف المرسل (الراكب أو السائق).
+     * @return مُعرّف الطرف الآخر (السائق أو الراكب) أو null.
+     */
+    public static Long findActiveChatPartner(Long userId) {
         
-        // ... (بقية المنطق القديم: التحقق من وجود المستخدم، getUserRole، والتوجيه إلى parsePassengerMessage/parseDriverMessage)
-    }
+        Document orderDoc = orderCollection.find(
+            Filters.and(
+                // البحث عن الطلب الذي يكون فيه المستخدم إما راكب أو سائق
+                Filters.or(Filters.eq("userId", userId), Filters.eq("driverId", userId)),
 
-    // ... (بقية الكلاس)
-}
+                // الطلب يجب أن يكون في حالة تسمح بالدردشة (غير منتهٍ وغير ملغى وغير مُنتظر موافقة/سائق)
+                Filters.ne("orderStatus", ORDER_FINISHED.toString()),
+                Filters.ne("orderStatus", ORDER_CANCELED.toString()),
+                Filters.ne("orderStatus", WAITING_DRIVER_APPROVAL.toString()),
+                Filters.ne("orderStatus", WAITING_DRIVER.toString()),
+                Filters.ne("orderStatus", WAITING_PICKUP_ADDRESS.toString())
+            )
+        ).first();
+
+        if (orderDoc == null) {
+            return null;
+        }
+
+        // تحديد الشريك وإرجاعه
+        Long passengerId = orderDoc.getLong("userId"); 
+        Long driverId = orderDoc.getLong("driverId");
+        
+        // يجب أن يكون driverId موجوداً أيضاً، وإلا لن تكون الدردشة مفيدة
+        if (driverId == null) {
+             return null;
+        }
+
+        if (userId.equals(passengerId)) {
+            // المرسل هو الراكب، المستقبل هو السائق
+            return driverId;
+        } else if (userId.equals(driverId)) {
+            // المرسل هو السائق، المستقبل هو الراكب
+            return passengerId;
+        }
+
+        return null;
+    }
+    // نهاية الدالة findActiveChatPartner
 
     public static Document getOrderByPassengerIdAndStatus(Long userId, OrderStatus orderStatus) {
         return orderCollection.find(
