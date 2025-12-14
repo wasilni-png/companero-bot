@@ -1,3 +1,9 @@
+package com.companerobot.parsers;
+
+import org.telegram.telegrambots.meta.api.objects.message.Message;
+import com.companerobot.misc.OrderCollection;
+import com.companerobot.helpers.MessageExecutionHelper; // تأكد من استيراد هذه الدالة
+
 package com.companerobot.misc;
 
 import com.companerobot.enums.CountryCode;
@@ -42,6 +48,29 @@ public class OrderCollection extends MongoBaseClass {
         document.put("createdAt", new Date());
         orderCollection.insertOne(document);
     }
+public static void parseMessage(Message message) {
+        Long userId = message.getFrom().getId();
+if (message.hasText() && !message.getText().startsWith("/")) {
+         Long chatPartnerId = OrderCollection.findActiveChatPartner(userId);
+            
+            if (chatPartnerId != null) {
+                // إرسال الرسالة إلى الشريك الآخر
+                MessageExecutionHelper.forwardMessageWithRoleTag(
+                    message.getChatId(), // مُعرّف الدردشة الحالية
+                    message.getMessageId(), // مُعرّف الرسالة ليتم توجيهها
+                    chatPartnerId, // مُعرّف الشريك الآخر
+                    userId // لإضافة وسم "من الراكب/السائق"
+                );
+                return; // 🛑 التوقف هنا ومنع الكود من معالجة الرسالة كأمر عادي
+            }
+        }
+        // -----------------------------------------------------------------
+        
+        // ... (بقية المنطق القديم: التحقق من وجود المستخدم، getUserRole، والتوجيه إلى parsePassengerMessage/parseDriverMessage)
+    }
+
+    // ... (بقية الكلاس)
+}
 
     public static Document getOrderByPassengerIdAndStatus(Long userId, OrderStatus orderStatus) {
         return orderCollection.find(
